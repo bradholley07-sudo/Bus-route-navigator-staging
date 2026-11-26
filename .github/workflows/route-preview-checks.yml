@@ -1,0 +1,35 @@
+name: Route Preview Checks
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [official-route-preview-and-driver-roles]
+permissions:
+  contents: read
+jobs:
+  syntax-and-browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check embedded JavaScript syntax
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          html = Path("index.html").read_text()
+          scripts = re.findall(r'<script[^>]*>(.*?)</script>', html, flags=re.S | re.I)
+          inline = [script for script in scripts if script.strip()]
+          if not inline:
+              raise SystemExit("No inline JavaScript found")
+          Path("/tmp/app-inline.js").write_text("\n".join(inline))
+          PY
+          node --check /tmp/app-inline.js
+      - name: Install browser test tools
+        run: |
+          npm install --no-save playwright
+          npx playwright install --with-deps chromium
+      - name: Run route preview browser smoke tests
+        run: node tests/route-preview.spec.cjs
