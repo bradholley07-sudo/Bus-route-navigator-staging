@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>BusRoute Navigator</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#f2f4f7;color:#17202a}header{background:#17202a;color:white;padding:20px;text-align:center}header h1{margin:0;font-size:25px}.container{max-width:650px;margin:auto;padding:18px}.card{background:white;border-radius:16px;padding:18px;margin-bottom:16px;box-shadow:0 3px 12px rgba(0,0,0,.08)}button{width:100%;border:0;border-radius:12px;padding:16px;margin:7px 0;font-size:17px;font-weight:600;background:#2563eb;color:white}.mode-button{background:#0f766e}.secondary{background:#64748b}.pickup{background:#16803c}.dropoff{background:#c2410c}.school{background:#7c3aed}.other{background:#475569}.danger{background:#b91c1c}.confirm{background:#0f766e}.hidden{display:none}.stop{border-left:5px solid #2563eb;padding:10px;margin:8px 0;background:#f8fafc;border-radius:8px}.status{background:#eef2ff;padding:12px;border-radius:10px;margin:10px 0;font-size:14px}.big-number{font-size:42px;font-weight:700;text-align:center}input,select{width:100%;padding:14px;border:1px solid #cbd5e1;border-radius:10px;font-size:16px;margin:6px 0 12px}
+#routeMap{height:65vh;min-height:380px;width:100%;border-radius:12px;z-index:1;background:#e5e7eb}.history-item{border-left:5px solid #0f766e;padding:12px;margin:10px 0;background:#f8fafc;border-radius:8px}#mapLoadStatus{margin:8px 0;padding:10px;background:#eef2ff;border-radius:8px;font-size:14px}#routePreviewMap{height:58vh;min-height:360px;width:100%;border-radius:12px;background:#e5e7eb;z-index:1}.preview-stop{border-left:5px solid #2563eb;padding:10px;margin:8px 0;background:#f8fafc;border-radius:8px}
+</style>
+</head>
+<body>
+<header><h1>🚌 BusRoute Navigator</h1><p>School Bus Route Prototype</p></header>
+<div class="container">
+<section id="home">
+<div class="card"><h2>Route Builder</h2><p>Select a bus first, then record its route.</p><button class="mode-button" onclick="openBuilder('Morning')">🌅 Morning Route Builder</button><button class="mode-button" onclick="openBuilder('Evening')">🌆 Evening Route Builder</button></div>
+<div class="card"><h2>Regular Driver</h2><p>Preview your route map and update stop names.</p><button onclick="openRegularDriver()">🗺️ Route Map / Edit Stops</button></div><div class="card"><h2>Substitute Driver</h2><p>Select your bus, preview the route, then start navigation.</p><button onclick="openSubstitute()">🚍 Start Route</button></div>
+<div class="card"><h2>Other Trips</h2><button class="secondary">🏫 Tech School Trip</button><button class="secondary">🏆 Athletic Trip</button><button class="secondary">➡️ Express Route</button></div>
+<div class="card"><h2>Route History</h2><p>View maps from completed trips.</p><button class="secondary" onclick="openRouteHistory()">🗺️ Route History</button></div>
+<div class="card"><h2>Administration</h2><button class="secondary" onclick="openAdmin()">📊 Administration</button></div>
+</section>
+<section id="builder" class="hidden"><div class="card"><h2 id="builderTitle">Route Builder</h2><label>1. Select Bus</label><select id="builderBusSelect" onchange="builderBusChanged()"></select><div class="status" id="builderBusStatus">Choose the bus this route belongs to.</div><div class="status" id="gpsStatus">📍 GPS has not been activated.</div><label>Route Name</label><input id="routeName" placeholder="Example: Route 12"><h3>Add Official Route Stop</h3><p>Only press a button when the bus is actually at an official route stop.</p><button class="pickup" onclick="recordStop('Student Pickup')">🟢 Student Pickup</button><button class="dropoff" onclick="recordStop('Student Drop-off')">🟠 Student Drop-off</button><button class="school" onclick="recordStop('School')">🟣 School</button><button class="other" onclick="recordStop('Other Stop')">⚪ Other Stop</button><div id="stopList"></div><button onclick="saveRoute()">💾 Save Route</button><button class="secondary" onclick="goHome()">← Back</button></div></section>
+<section id="substitute" class="hidden"><div class="card"><h2>🚍 Substitute Driver</h2><label>1. Select Bus</label><select id="busSelect" onchange="loadTripChoices()"></select><label>2. Select Trip / Route</label><select id="routeSelect"></select><button class="secondary" onclick="previewSelectedRoute('substitute')">🗺️ Preview Route Map</button><button onclick="startNavigation()">▶️ Start Navigation</button><button class="secondary" onclick="goHome()">← Back</button></div><div id="navigationPanel" class="card hidden"><div class="big-number" id="stopCounter">1</div><h2 id="nextStop">Next Stop</h2><div class="status" id="navigationStatus">Waiting for GPS...</div><button class="danger" onclick="simulateArrival()">🧪 TEST: Simulate Arrival</button><div id="missedStopReview" class="status hidden" aria-live="polite"></div></div></section>
+<section id="routePreviewSection" class="hidden"><div class="card"><h2 id="routePreviewTitle">Route Preview</h2><div class="status" id="routePreviewSummary"></div><div id="routePreviewStatus" class="status">Map preview shows saved stops connected in sequence.</div><div id="routePreviewMap" class="hidden"></div><div id="routePreviewStopList" class="hidden"></div><button id="routePreviewStartButton" class="hidden" onclick="startPreviewRoute()">▶️ Start This Route</button><button id="routePreviewBackButton" class="secondary" onclick="backFromPreview()">← Back</button></div></section>
+<section id="routeHistory" class="hidden"><div class="card"><h2>🗺️ Route History</h2><p>Select a completed trip to view its GPS track and stops.</p><div id="tripHistoryList"></div><button class="secondary" onclick="goHome()">← Back</button></div></section>
+<section id="tripMapSection" class="hidden"><div class="card"><h2 id="tripMapTitle">Trip Map</h2><div id="tripMapSummary" class="status"></div><div id="mapLoadStatus" role="status">Preparing map…</div><div id="routeMap"></div><p><small>Blue line: recorded GPS track. Green markers: scheduled stops. Red markers: possible missed or uncertain stops.</small></p><button class="secondary" onclick="openRouteHistory()">← Back to Route History</button><button class="secondary" onclick="goHome()">Home</button></div></section>
+<section id="admin" class="hidden"><div class="card"><h2>📊 Administration</h2><h3>🚌 Bus Management</h3><p>Add the buses that your transportation department uses. They will automatically appear in the Route Builder and Substitute Driver bus lists.</p><label>Bus Number</label><input id="busNumberInput" placeholder="Example: 102"><button onclick="addBus()">➕ Add Bus</button><div id="adminBuses"></div><h3>🗺️ Saved Routes</h3><div id="adminRoutes"></div><button class="secondary" onclick="goHome()">← Back</button></div></section>
+</div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+let previewRole="regular",previewRoute=null,previewMapInstance=null,previewBusId=null;
+let currentMode="",currentStops=[],currentRoute=null,currentStopIndex=0,watchId=null,navigationState=null,currentBuilderBus=null,possibleMissedStops=[],currentTrip=null,routeMapInstance=null,lastTripSaveAt=0,pendingTripSaveTimer=null;
+const CLOSE_STOP_THRESHOLD=20;
+function hideAll(){document.querySelectorAll("section").forEach(s=>s.classList.add("hidden"))}
+function goHome(){if(watchId!==null){navigator.geolocation.clearWatch(watchId);watchId=null}hideAll();home.classList.remove("hidden")}
+function openBuilder(mode){currentMode=mode;currentStops=[];currentBuilderBus=null;hideAll();builder.classList.remove("hidden");builderTitle.textContent=mode+" Route Builder";routeName.value="";stopList.innerHTML="";loadBuilderBusChoices();startGPS()}
+function loadBuilderBusChoices(){builderBusSelect.innerHTML="";let buses=JSON.parse(localStorage.getItem("busList")||"[]");if(!buses.length){builderBusSelect.innerHTML="<option value=\"\">No buses added yet — use Administration first</option>";builderBusStatus.textContent="⚠️ Add a bus in Administration before building a route.";return}builderBusSelect.innerHTML="<option value=\"\">Select a bus...</option>";buses.forEach(b=>{let o=document.createElement("option");o.value=b.id;o.textContent=b.number;builderBusSelect.appendChild(o)});builderBusChanged()}
+function builderBusChanged(){let id=Number(builderBusSelect.value);let buses=JSON.parse(localStorage.getItem("busList")||"[]");currentBuilderBus=buses.find(b=>b.id===id)||null;if(currentBuilderBus)builderBusStatus.textContent="🚌 Building "+currentMode+" Route for Bus "+currentBuilderBus.number+".";else builderBusStatus.textContent="Choose the bus this route belongs to."}
+function startGPS(){if(!navigator.geolocation){gpsStatus.textContent="❌ GPS unavailable.";return}navigator.geolocation.getCurrentPosition(p=>gpsStatus.textContent="📍 GPS active: "+p.coords.latitude.toFixed(6)+", "+p.coords.longitude.toFixed(6),e=>gpsStatus.textContent="⚠️ GPS unavailable. "+e.message,{enableHighAccuracy:true,timeout:10000,maximumAge:0})}
+function recordStop(type){if(!currentBuilderBus){alert("Please select a bus before recording route stops.");return}if(!navigator.geolocation){alert("GPS unavailable.");return}gpsStatus.textContent="📍 Getting precise GPS location...";navigator.geolocation.getCurrentPosition(p=>{let s={number:currentStops.length+1,type:type,latitude:p.coords.latitude,longitude:p.coords.longitude,accuracy:p.coords.accuracy,name:type+" "+(currentStops.length+1)};currentStops.push(s);displayStops();gpsStatus.textContent="✅ "+type+" recorded at GPS location."},e=>{alert("Could not get GPS location.\n\n"+e.message);gpsStatus.textContent="❌ GPS recording failed."},{enableHighAccuracy:true,timeout:15000,maximumAge:0})}
+function displayStops(){stopList.innerHTML="<h3>Stops Recorded</h3><p><small>Tap a stop name to edit it.</small></p>";currentStops.forEach((s,i)=>{stopList.innerHTML+="<div class='stop'><strong>"+s.number+".</strong><input value=\""+s.name.replace(/&/g,"&amp;").replace(/\"/g,"&quot;").replace(/</g,"&lt;").replace(/>/g,"&gt;")+"\" onchange=\"renameStop("+i+",this.value)\" aria-label=\"Stop "+s.number+" name\"><small>Type: "+s.type+"<br>GPS: "+s.latitude.toFixed(6)+", "+s.longitude.toFixed(6)+"<br>Accuracy: "+Math.round(s.accuracy)+" meters</small></div>"})}
+function renameStop(index,name){name=name.trim();if(!name){alert("Please enter a stop name.");displayStops();return}currentStops[index].name=name;displayStops()}
+function saveRoute(){if(!currentBuilderBus){alert("Please select a bus before saving this route.");return}let n=routeName.value.trim();if(!n){alert("Please enter a route name.");return}if(!currentStops.length){alert("Please record at least one stop.");return}let routes=JSON.parse(localStorage.getItem("busRoutes")||"[]");routes.push({id:Date.now(),name:n,mode:currentMode,busId:currentBuilderBus.id,busNumber:currentBuilderBus.number,stops:currentStops});localStorage.setItem("busRoutes",JSON.stringify(routes));alert(currentMode+" route saved for Bus "+currentBuilderBus.number+" with "+currentStops.length+" stops.");goHome()}
+function openSubstitute(){hideAll();substitute.classList.remove("hidden");loadBusChoices()}
+function loadBusChoices(){busSelect.innerHTML="";let buses=JSON.parse(localStorage.getItem("busList")||"[]");if(!buses.length){busSelect.innerHTML="<option value=\"\">No buses added yet — use Administration</option>";routeSelect.innerHTML="<option>No trips available</option>";return}buses.forEach(b=>{let o=document.createElement("option");o.value=b.id;o.textContent=b.number;busSelect.appendChild(o)});loadTripChoices()}
+function loadTripChoices(){routeSelect.innerHTML="";let selectedBusId=String(busSelect.value);let routes=JSON.parse(localStorage.getItem("busRoutes")||"[]");let matching=routes.filter(r=>r.busId!==null&&r.busId!==undefined&&r.busId!==""&&String(r.busId)===selectedBusId);let legacy=routes.filter(r=>r.busId===null||r.busId===undefined||r.busId==="");if(!matching.length&&!legacy.length){routeSelect.innerHTML="<option value=\"\">No routes saved for this bus</option>";return}matching.forEach(r=>{let o=document.createElement("option");o.value=r.id;o.textContent=r.name+" — "+r.mode;routeSelect.appendChild(o)});if(legacy.length){let group=document.createElement("optgroup");group.label="Older / Unassigned Test Routes";legacy.forEach(r=>{let o=document.createElement("option");o.value=r.id;o.textContent=r.name+" — "+r.mode+" (unassigned)";group.appendChild(o)});routeSelect.appendChild(group)}}
+function startNavigation(){let routes=JSON.parse(localStorage.getItem("busRoutes")||"[]");currentRoute=routes.find(r=>String(r.id)===String(routeSelect.value));if(!currentRoute){alert("No route selected.");return}currentStopIndex=0;possibleMissedStops=[];currentTrip={id:Date.now(),routeId:currentRoute.id,routeName:currentRoute.name,mode:currentRoute.mode,busNumber:currentRoute.busNumber||busSelect.options[busSelect.selectedIndex]?.text||"Unknown",startedAt:new Date().toISOString(),completedAt:null,stops:JSON.parse(JSON.stringify(currentRoute.stops||[])),track:[],possibleMissedStops:[]};saveCurrentTrip();missedStopReview.classList.add("hidden");missedStopReview.innerHTML="";navigationPanel.classList.remove("hidden");resetNavigationState();showCurrentStop();startNavigationGPS()}
+function resetNavigationState(){navigationState={lastPosition:null,lastDistance:null,wasFarEnough:false,minDistance:Infinity,increasingSamples:0,nearStop:false};}
+function arrivalRadius(stop){let accuracy=Number(stop.accuracy)||10;return Math.max(8,Math.min(20,accuracy*1.25))}
+function distanceBetweenStops(a,b){if(!a||!b)return Infinity;return distance(a.latitude,a.longitude,b.latitude,b.longitude)}
+function closeStopDistance(){if(!currentRoute||currentStopIndex<=0)return Infinity;return distanceBetweenStops(currentRoute.stops[currentStopIndex-1],currentRoute.stops[currentStopIndex])}
+function nextStopDistance(){if(!currentRoute||currentStopIndex>=currentRoute.stops.length-1)return Infinity;return distanceBetweenStops(currentRoute.stops[currentStopIndex],currentRoute.stops[currentStopIndex+1])}
+function requiresManualConfirmation(){return closeStopDistance()<=CLOSE_STOP_THRESHOLD||nextStopDistance()<=CLOSE_STOP_THRESHOLD}
+function showCurrentStop(){if(!currentRoute||currentStopIndex>=currentRoute.stops.length){finishCurrentTrip();nextStop.textContent="🎉 Route Complete";stopCounter.textContent=currentRoute.stops.length+" / "+currentRoute.stops.length;navigationStatus.textContent="Route finished. Review any stops needing attention below.";if(possibleMissedStops.length){missedStopReview.classList.remove("hidden");missedStopReview.innerHTML="<strong>⚠️ "+possibleMissedStops.length+" possible missed / uncertain stop(s)</strong><br>"+possibleMissedStops.map(s=>s.number+". "+escapeHTML(s.name)+" — "+escapeHTML(s.reason)).join("<br>")+"<p>Review these stops only after safely parking. GPS proximity does not confirm whether a student boarded.</p>"}else{missedStopReview.classList.remove("hidden");missedStopReview.textContent="No stops were flagged as GPS-uncertain. This does not verify student boarding."}let mapButton=document.createElement("button");mapButton.textContent="🗺️ View Route Map";mapButton.onclick=viewCurrentTripMap;missedStopReview.appendChild(mapButton);return}let s=currentRoute.stops[currentStopIndex];stopCounter.textContent=(currentStopIndex+1)+" / "+currentRoute.stops.length;nextStop.textContent=s.name;navigationStatus.textContent=requiresManualConfirmation()?"Closely spaced stop • app will track it and continue without a button":"Next stop: "+s.type+" • arrival zone about "+Math.round(arrivalRadius(s))+"m"}
+function escapeHTML(v){return String(v||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;")}
+function advanceStop(message,uncertainReason){if(uncertainReason&&currentRoute&&currentRoute.stops[currentStopIndex]){let s=currentRoute.stops[currentStopIndex];possibleMissedStops.push({number:s.number||currentStopIndex+1,name:s.name||("Stop "+(currentStopIndex+1)),reason:uncertainReason,latitude:s.latitude,longitude:s.longitude})}if(currentTrip)currentTrip.possibleMissedStops=possibleMissedStops.slice();currentStopIndex++;resetNavigationState();navigationStatus.textContent=message;showCurrentStop()}
+function simulateArrival(){if(!currentRoute)return;let s=currentRoute.stops[currentStopIndex];if(!s)return;advanceStop("🧪 Test arrival recorded at "+s.name)}
+function startNavigationGPS(){if(!navigator.geolocation){navigationStatus.textContent="GPS unavailable.";return}watchId=navigator.geolocation.watchPosition(p=>{recordTripPosition(p);if(!currentRoute||currentStopIndex>=currentRoute.stops.length)return;let s=currentRoute.stops[currentStopIndex],d=distance(p.coords.latitude,p.coords.longitude,s.latitude,s.longitude),r=arrivalRadius(s),close=requiresManualConfirmation(),accuracy=Number(p.coords.accuracy)||15;if(!navigationState)return;navigationStatus.textContent="GPS active • "+Math.round(d)+"m from next stop";if(navigationState.lastPosition===null){navigationState.lastPosition={latitude:p.coords.latitude,longitude:p.coords.longitude};navigationState.lastDistance=d;navigationState.minDistance=d;navigationState.wasFarEnough=d>r+15;return}let moved=distance(navigationState.lastPosition.latitude,navigationState.lastPosition.longitude,p.coords.latitude,p.coords.longitude);if(d<navigationState.minDistance){navigationState.minDistance=d;navigationState.increasingSamples=0}else if(d>navigationState.minDistance+Math.max(8,accuracy*.5)){navigationState.increasingSamples++}else{navigationState.increasingSamples=0}if(d>r+15)navigationState.wasFarEnough=true;if(close){if(d<=r+15)navigationState.nearStop=true;if(navigationState.nearStop&&d>r+20&&navigationState.increasingSamples>=2){advanceStop("⚠️ Close stop passed; saved for end-of-route review.","Closely spaced stop: GPS could not reliably distinguish the exact arrival.");return}}else{if(navigationState.wasFarEnough&&d<=r&&navigationState.lastDistance!==null&&d<navigationState.lastDistance){advanceStop("✅ GPS detected arrival at "+s.name);return}if(navigationState.increasingSamples>=3&&navigationState.minDistance<=Math.max(r+25,accuracy*2)){advanceStop("⚠️ Stop passed; saved for end-of-route review.","GPS pass-by detected, but arrival could not be confirmed.");return}}navigationState.lastPosition={latitude:p.coords.latitude,longitude:p.coords.longitude};navigationState.lastDistance=d},e=>navigationStatus.textContent="GPS error: "+e.message,{enableHighAccuracy:true,maximumAge:2000,timeout:10000})}
+function distance(lat1,lon1,lat2,lon2){let R=6371000,rad=Math.PI/180,dLat=(lat2-lat1)*rad,dLon=(lon2-lon1)*rad,a=Math.sin(dLat/2)**2+Math.cos(lat1*rad)*Math.cos(lat2*rad)*Math.sin(dLon/2)**2;return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a))}
+function saveCurrentTrip(){if(!currentTrip)return;let trips=JSON.parse(localStorage.getItem("busTrips")||"[]");let i=trips.findIndex(t=>t.id===currentTrip.id);if(i>=0)trips[i]=currentTrip;else trips.push(currentTrip);try{localStorage.setItem("busTrips",JSON.stringify(trips));lastTripSaveAt=Date.now()}catch(e){navigationStatus.textContent="⚠️ Trip storage is full. GPS history may be incomplete."}}
+function recordTripPosition(p){if(!currentTrip)return;let point={latitude:p.coords.latitude,longitude:p.coords.longitude,accuracy:Number(p.coords.accuracy)||null,speed:p.coords.speed===null?null:p.coords.speed,heading:p.coords.heading===null?null:p.coords.heading,timestamp:new Date(p.timestamp||Date.now()).toISOString()};let last=currentTrip.track[currentTrip.track.length-1];if(last){let moved=distance(last.latitude,last.longitude,point.latitude,point.longitude);let elapsed=new Date(point.timestamp)-new Date(last.timestamp);if(moved<4&&elapsed<4000)return}currentTrip.track.push(point);if(currentTrip.track.length>15000)currentTrip.track.shift();if(Date.now()-lastTripSaveAt>=10000)saveCurrentTrip();else if(!pendingTripSaveTimer)pendingTripSaveTimer=setTimeout(()=>{pendingTripSaveTimer=null;saveCurrentTrip()},10000)}
+function finishCurrentTrip(){if(!currentTrip||currentTrip.completedAt)return;currentTrip.completedAt=new Date().toISOString();currentTrip.possibleMissedStops=possibleMissedStops.slice();if(pendingTripSaveTimer){clearTimeout(pendingTripSaveTimer);pendingTripSaveTimer=null}saveCurrentTrip();if(watchId!==null){navigator.geolocation.clearWatch(watchId);watchId=null}}
+function openRouteHistory(){if(watchId!==null&&currentRoute&&currentStopIndex<currentRoute.stops.length){/* keep active route tracking alive while viewing history */}hideAll();routeHistory.classList.remove("hidden");displayTripHistory()}
+function displayTripHistory(){let trips=JSON.parse(localStorage.getItem("busTrips")||"[]").filter(t=>t.completedAt).sort((a,b)=>new Date(b.completedAt)-new Date(a.completedAt));tripHistoryList.innerHTML=trips.length?trips.map(t=>"<div class='history-item'><strong>"+escapeHTML(t.routeName)+" — Bus "+escapeHTML(t.busNumber)+"</strong><br>"+escapeHTML(t.mode)+" route<br>"+new Date(t.completedAt).toLocaleString()+"<br>"+t.stops.length+" stops • "+t.track.length+" GPS points<br><button onclick='viewTripMap("+Number(t.id)+")'>🗺️ View Map</button></div>").join(""):"<p>No completed trips have been saved on this device yet.</p>"}
+function viewCurrentTripMap(){if(currentTrip)viewTripMap(currentTrip.id)}
+function viewTripMap(id){
+ let trips=JSON.parse(localStorage.getItem("busTrips")||"[]");
+ let trip=trips.find(t=>t.id===Number(id));
+ if(!trip)return;
+ hideAll();
+ tripMapSection.classList.remove("hidden");
+ tripMapTitle.textContent=trip.routeName+" — Bus "+trip.busNumber;
+ tripMapSummary.textContent=new Date(trip.startedAt).toLocaleString()+" • "+trip.stops.length+" planned stops • "+trip.track.length+" GPS points"+(trip.possibleMissedStops?.length?" • "+trip.possibleMissedStops.length+" flagged stops":"");
+ mapLoadStatus.textContent="Loading map…";
+ if(!window.L){mapLoadStatus.textContent="The map library did not load. Check your internet connection, then reopen this map.";return}
+ if(routeMapInstance){routeMapInstance.remove();routeMapInstance=null}
+ try{
+  routeMapInstance=L.map("routeMap");
+  let tileLayer=L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19,attribution:"© OpenStreetMap contributors"});
+  tileLayer.on("tileerror",()=>{mapLoadStatus.textContent="The map background could not load. Check your internet connection or try again later. Your recorded GPS trail is still saved."});
+  tileLayer.on("load",()=>{mapLoadStatus.textContent="Map loaded. Blue line shows the recorded GPS trail."});
+  tileLayer.addTo(routeMapInstance);
+  let points=(trip.track||[]).filter(p=>Number.isFinite(p.latitude)&&Number.isFinite(p.longitude)&&(!p.accuracy||p.accuracy<=60)).map(p=>[p.latitude,p.longitude]);
+  if(points.length){
+   L.polyline(points,{color:"#2563eb",weight:5,opacity:.85}).addTo(routeMapInstance);
+   routeMapInstance.fitBounds(points,{padding:[25,25]});
+  }else{
+   let first=(trip.stops||[]).find(s=>Number.isFinite(s.latitude)&&Number.isFinite(s.longitude));
+   if(first)routeMapInstance.setView([first.latitude,first.longitude],14);
+   else routeMapInstance.setView([33.5,-86.8],6);
+   mapLoadStatus.textContent="No usable GPS trail was saved for this trip. Showing planned stops instead.";
+  }
+  (trip.stops||[]).forEach(s=>{if(Number.isFinite(s.latitude)&&Number.isFinite(s.longitude)){let m=L.circleMarker([s.latitude,s.longitude],{radius:8,color:"#166534",fillColor:"#22c55e",fillOpacity:.9}).addTo(routeMapInstance);m.bindPopup("Stop "+s.number+": "+escapeHTML(s.name||s.type||"Stop"))}});
+  (trip.possibleMissedStops||[]).forEach(s=>{if(Number.isFinite(s.latitude)&&Number.isFinite(s.longitude)){let m=L.circleMarker([s.latitude,s.longitude],{radius:10,color:"#991b1b",fillColor:"#ef4444",fillOpacity:.95}).addTo(routeMapInstance);m.bindPopup("Possible missed / uncertain stop "+s.number+": "+escapeHTML(s.name))}});
+  requestAnimationFrame(()=>{if(routeMapInstance){routeMapInstance.invalidateSize();setTimeout(()=>routeMapInstance&&routeMapInstance.invalidateSize(),300)}});
+ }catch(e){mapLoadStatus.textContent="The map could not be displayed: "+e.message+". Your saved trip data has not been deleted."}
+}
+function openRegularDriver(){
+ hideAll();
+ document.getElementById("routePreviewSection").classList.remove("hidden");
+ previewRole="regular";previewRoute=null;previewBusId=null;
+ document.getElementById("routePreviewTitle").textContent="Regular Driver — Route Preview";
+ document.getElementById("routePreviewSummary").textContent="Choose a bus and saved route to preview or edit stop names.";
+ document.getElementById("routePreviewStatus").textContent="";
+ document.getElementById("routePreviewStopList").innerHTML="";
+ document.getElementById("routePreviewMap").classList.add("hidden");
+ document.getElementById("routePreviewStopList").classList.add("hidden");
+ document.getElementById("routePreviewStartButton").classList.add("hidden");
+ document.getElementById("routePreviewBackButton").textContent="← Home";
+ const oldPicker=document.getElementById("regularRoutePicker");if(oldPicker)oldPicker.remove();
+ if(previewMapInstance){previewMapInstance.remove();previewMapInstance=null}
+ const buses=JSON.parse(localStorage.getItem("busList")||"[]");
+ if(!buses.length){document.getElementById("routePreviewStatus").textContent="No buses added yet. Add buses in Administration.";return}
+ const card=document.querySelector("#routePreviewSection .card");
+ const picker=document.createElement("div");picker.id="regularRoutePicker";
+ picker.innerHTML='<label for="regularBusChoice">Select Bus</label><select id="regularBusChoice" onchange="populateRegularRoutes()"></select><label for="regularRouteChoice">Select Route</label><select id="regularRouteChoice"></select><button class="secondary" onclick="previewSelectedRoute(\'regular\')">🗺️ Preview Selected Route</button>';
+ card.insertBefore(picker,document.getElementById("routePreviewMap"));
+ const busChoice=document.getElementById("regularBusChoice");
+ buses.forEach(b=>{const option=document.createElement("option");option.value=String(b.id);option.textContent=b.number;busChoice.appendChild(option)});
+ populateRegularRoutes();
+}
+function populateRegularRoutes(){
+ const busChoice=document.getElementById("regularBusChoice"),routeChoice=document.getElementById("regularRouteChoice");
+ if(!busChoice||!routeChoice)return;
+ const busId=Number(busChoice.value);previewBusId=busId;
+ const routes=JSON.parse(localStorage.getItem("busRoutes")||"[]");
+ routeChoice.innerHTML="";
+ routes.filter(r=>Number(r.busId)===busId||!r.busId).forEach(r=>{const option=document.createElement("option");option.value=String(r.id);option.textContent=r.name+" — "+r.mode+(r.busId?"":" (older unassigned route)");routeChoice.appendChild(option)});
+ if(!routeChoice.options.length){const option=document.createElement("option");option.value="";option.textContent="No routes saved for this bus";routeChoice.appendChild(option)}
+}
+function previewSelectedRoute(role){
+ previewRole=role;
+ const routeChoice=role==="regular"?document.getElementById("regularRouteChoice"):document.getElementById("routeSelect");
+ const id=Number(routeChoice?.value);
+ const routes=JSON.parse(localStorage.getItem("busRoutes")||"[]");
+ previewRoute=routes.find(r=>Number(r.id)===id)||null;
+ if(!previewRoute){alert("Please select a saved route.");return}
+ previewBusId=role==="regular"?(Number(document.getElementById("regularBusChoice")?.value)||null):(Number(document.getElementById("busSelect").value)||null);
+ hideAll();document.getElementById("routePreviewSection").classList.remove("hidden");
+ document.getElementById("routePreviewTitle").textContent=(role==="regular"?"Regular Driver":"Substitute Driver")+" — "+previewRoute.name;
+ document.getElementById("routePreviewSummary").textContent="Bus "+(previewRoute.busNumber||"Unassigned")+" • "+previewRoute.mode+" • "+(previewRoute.stops||[]).length+" stops"+(role==="regular"?" • stop names editable":" • view only");
+ document.getElementById("routePreviewStatus").textContent="Preview connects saved stop locations with straight lines—not actual road directions.";
+ document.getElementById("routePreviewStopList").innerHTML=(previewRoute.stops||[]).map((s,i)=>"<div class='preview-stop'><strong>"+(i+1)+". "+escapeHTML(s.name||s.type)+"</strong><br><small>"+escapeHTML(s.type||"Stop")+(role==="regular"?" • Tap map marker to rename":"")+"</small></div>").join("");
+ document.getElementById("routePreviewStopList").classList.remove("hidden");
+ document.getElementById("routePreviewMap").classList.remove("hidden");
+ document.getElementById("routePreviewStartButton").classList.remove("hidden");
+ document.getElementById("routePreviewBackButton").textContent=role==="regular"?"← Choose Another Route":"← Back to Bus / Route Selection";
+ const picker=document.getElementById("regularRoutePicker");if(picker)picker.classList.add("hidden");
+ if(previewMapInstance){previewMapInstance.remove();previewMapInstance=null}
+ if(!window.L){document.getElementById("routePreviewStatus").textContent="Map library failed to load. Check internet connection.";return}
+ try{
+  previewMapInstance=L.map("routePreviewMap");
+  const status=document.getElementById("routePreviewStatus");
+  const tiles=L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19,attribution:"© OpenStreetMap contributors"});
+  tiles.on("tileerror",()=>status.textContent="Map tiles unavailable. Stop list is still shown.");tiles.addTo(previewMapInstance);
+  const stops=previewRoute.stops||[];
+  const valid=stops.map((s,i)=>({s,i,lat:Number(s.latitude),lng:Number(s.longitude)})).filter(p=>p.s.latitude!==null&&p.s.latitude!==undefined&&p.s.latitude!==""&&p.s.longitude!==null&&p.s.longitude!==undefined&&p.s.longitude!==""&&Number.isFinite(p.lat)&&Number.isFinite(p.lng)&&p.lat>=-90&&p.lat<=90&&p.lng>=-180&&p.lng<=180);
+  if(valid.length){
+   const points=valid.map(p=>[p.lat,p.lng]);
+   if(points.length>1){
+    L.polyline(points,{color:"#2563eb",weight:4,opacity:.8,dashArray:"8 6"}).addTo(previewMapInstance);
+    previewMapInstance.fitBounds(L.latLngBounds(points),{padding:[30,30]});
+   }else{previewMapInstance.setView(points[0],16)}
+   valid.forEach(({s,i,lat,lng})=>{
+    const marker=L.marker([lat,lng]).addTo(previewMapInstance);
+    const safeName=escapeHTML(s.name||s.type||"Stop");
+    const popup=role==="regular"?"<b>Stop "+(i+1)+": "+safeName+"</b><br>"+escapeHTML(s.type||"Stop")+"<br><input id='previewStopName' value='"+safeName.replace(/'/g,"&#39;")+"' placeholder='Stop name'><button onclick='savePreviewStopName("+i+")'>Save Name</button>":"<b>Stop "+(i+1)+": "+safeName+"</b><br>"+escapeHTML(s.type||"Stop");
+    marker.bindPopup(popup);
+   });
+  }else{previewMapInstance.setView([33.5,-86.8],6);status.textContent="No valid GPS coordinates found for this route's stops."}
+  requestAnimationFrame(()=>{if(previewMapInstance)previewMapInstance.invalidateSize()});
+ }catch(e){document.getElementById("routePreviewStatus").textContent="Map preview failed: "+e.message}
+}
+function savePreviewStopName(index){
+ if(previewRole!=="regular"||!previewRoute)return;
+ const input=document.getElementById("previewStopName"),name=input?.value?.trim();
+ if(!name){alert("Enter a stop name.");return}
+ const routes=JSON.parse(localStorage.getItem("busRoutes")||"[]");
+ const route=routes.find(r=>Number(r.id)===Number(previewRoute.id));
+ if(!route||!route.stops||!route.stops[index]){alert("That stop could not be found. Please reopen the route preview.");return}
+ route.stops[index].name=name;localStorage.setItem("busRoutes",JSON.stringify(routes));previewRoute=route;previewSelectedRoute("regular");
+}
+function startPreviewRoute(){
+ if(!previewRoute){alert("Please preview a route first.");return}
+ const buses=JSON.parse(localStorage.getItem("busList")||"[]");
+ const busId=previewRoute.busId||previewBusId;
+ const bus=buses.find(b=>Number(b.id)===Number(busId));
+ if(!bus){alert("The bus for this route could not be found. Please return and select a bus.");return}
+ if(watchId!==null){navigator.geolocation.clearWatch(watchId);watchId=null}
+ hideAll();document.getElementById("substitute").classList.remove("hidden");loadBusChoices();
+ const busSelectElement=document.getElementById("busSelect");busSelectElement.value=String(bus.id);loadTripChoices();
+ const routeSelectElement=document.getElementById("routeSelect");
+ const option=Array.from(routeSelectElement.options).find(o=>Number(o.value)===Number(previewRoute.id));
+ if(!option){alert("This route is not available for the selected bus. Please reopen the preview and check the bus assignment.");return}
+ routeSelectElement.value=String(previewRoute.id);startNavigation();
+}
+function backFromPreview(){if(previewRole==="substitute"){hideAll();document.getElementById("substitute").classList.remove("hidden")}else openRegularDriver()}
+
+function openAdmin(){hideAll();admin.classList.remove("hidden");displayAdminBuses();displayAdminRoutes()}
+function addBus(){let input=busNumberInput.value.trim();if(!input){alert("Please enter a bus number.");return}let buses=JSON.parse(localStorage.getItem("busList")||"[]");if(buses.some(b=>String(b.number).toLowerCase()===input.toLowerCase())){alert("That bus is already in the list.");return}buses.push({id:Date.now(),number:input});localStorage.setItem("busList",JSON.stringify(buses));busNumberInput.value="";displayAdminBuses();alert("Bus "+input+" added.")}
+function removeBus(id){let buses=JSON.parse(localStorage.getItem("busList")||"[]");buses=buses.filter(b=>b.id!==id);localStorage.setItem("busList",JSON.stringify(buses));displayAdminBuses()}
+function displayAdminBuses(){let buses=JSON.parse(localStorage.getItem("busList")||"[]");adminBuses.innerHTML=buses.length?buses.map(b=>"<div class='stop'><strong>🚌 "+b.number+"</strong><button class='danger' onclick='removeBus("+b.id+")'>Remove Bus</button></div>").join(""):"<p>No buses have been added yet.</p>"}
+function displayAdminRoutes(){let routes=JSON.parse(localStorage.getItem("busRoutes")||"[]");adminRoutes.innerHTML=routes.length?routes.map(r=>"<div class='stop'><strong>"+r.name+"</strong><br>"+r.mode+" Route"+(r.busNumber?"<br>🚌 Bus "+r.busNumber:"<br>⚠️ Unassigned / older route")+"<br>"+r.stops.length+" stops</div>").join(""):"<p>No routes have been created.</p>"}
+</script>
+</body>
+</html>
