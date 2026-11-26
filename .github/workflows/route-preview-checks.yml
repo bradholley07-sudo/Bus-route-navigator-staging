@@ -3,7 +3,7 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches: [official-route-preview-and-driver-roles]
+    branches: [main]
 permissions:
   contents: read
 jobs:
