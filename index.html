@@ -195,7 +195,7 @@ function startPreviewRoute(){
  if(!option){alert("This route is not available for the selected bus. Please reopen the preview and check the bus assignment.");return}
  routeSelectElement.value=String(previewRoute.id);startNavigation();
 }
-function backFromPreview(){if(previewRole==="substitute"){hideAll();document.getElementById("substitute").classList.remove("hidden")}else openRegularDriver()}
+function backFromPreview(){if(previewRole==="substitute"){hideAll();document.getElementById("substitute").classList.remove("hidden")}else if(!previewRoute){goHome()}else{openRegularDriver()}}
 
 function openAdmin(){hideAll();admin.classList.remove("hidden");displayAdminBuses();displayAdminRoutes()}
 function addBus(){let input=busNumberInput.value.trim();if(!input){alert("Please enter a bus number.");return}let buses=JSON.parse(localStorage.getItem("busList")||"[]");if(buses.some(b=>String(b.number).toLowerCase()===input.toLowerCase())){alert("That bus is already in the list.");return}buses.push({id:Date.now(),number:input});localStorage.setItem("busList",JSON.stringify(buses));busNumberInput.value="";displayAdminBuses();alert("Bus "+input+" added.")}
