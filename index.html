@@ -155,21 +155,36 @@ function previewSelectedRoute(role){
   const tiles=L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19,attribution:"© OpenStreetMap contributors"});
   tiles.on("tileerror",()=>status.textContent="Map tiles unavailable. Stop list is still shown.");tiles.addTo(previewMapInstance);
   const stops=previewRoute.stops||[];
-  const valid=stops.map((s,i)=>({s,i,lat:Number(s.latitude),lng:Number(s.longitude)})).filter(p=>p.s.latitude!==null&&p.s.latitude!==undefined&&p.s.latitude!==""&&p.s.longitude!==null&&p.s.longitude!==undefined&&p.s.longitude!==""&&Number.isFinite(p.lat)&&Number.isFinite(p.lng)&&p.lat>=-90&&p.lat<=90&&p.lng>=-180&&p.lng<=180);
-  if(valid.length){
-   const points=valid.map(p=>[p.lat,p.lng]);
-   if(points.length>1){
-    L.polyline(points,{color:"#2563eb",weight:4,opacity:.8,dashArray:"8 6"}).addTo(previewMapInstance);
-    previewMapInstance.fitBounds(L.latLngBounds(points),{padding:[30,30]});
-   }else{previewMapInstance.setView(points[0],16)}
+   const valid=stops.map((s,i)=>({s,i,lat:Number(s.latitude),lng:Number(s.longitude)})).filter(p=>p.s.latitude!==null&&p.s.latitude!==undefined&&p.s.latitude!==""&&p.s.longitude!==null&&p.s.longitude!==undefined&&p.s.longitude!==""&&Number.isFinite(p.lat)&&Number.isFinite(p.lng)&&p.lat>=-90&&p.lat<=90&&p.lng>=-180&&p.lng<=180);
+   const completedTrips=JSON.parse(localStorage.getItem("busTrips")||"[]").filter(t=>t.completedAt&&String(t.routeId)===String(previewRoute.id)).sort((a,b)=>new Date(b.completedAt)-new Date(a.completedAt));
+   const recordedTrip=completedTrips[0]||null;
+   const trackPoints=recordedTrip?(recordedTrip.track||[]).filter(p=>Number.isFinite(p.latitude)&&Number.isFinite(p.longitude)&&(!p.accuracy||p.accuracy<=60)).map(p=>[p.latitude,p.longitude]):[];
+   let mapBounds=[];
+   if(trackPoints.length){
+    L.polyline(trackPoints,{color:"#2563eb",weight:5,opacity:.9}).addTo(previewMapInstance);
+    mapBounds=mapBounds.concat(trackPoints);
+    status.textContent="Blue line: actual GPS path from the most recently completed trip ("+new Date(recordedTrip.completedAt).toLocaleDateString()+").";
+   }else if(valid.length>1){
+    const stopPoints=valid.map(p=>[p.lat,p.lng]);
+    L.polyline(stopPoints,{color:"#64748b",weight:3,opacity:.7,dashArray:"8 7"}).addTo(previewMapInstance);
+    mapBounds=mapBounds.concat(stopPoints);
+    status.textContent="No completed GPS recording found for this route yet. Dashed line connects stops only.";
+   }else if(!valid.length){
+    status.textContent="No recorded GPS path or valid stop coordinates found for this route.";
+   }else{
+    status.textContent="No completed GPS recording found for this route yet. Showing its saved stop.";
+   }
    valid.forEach(({s,i,lat,lng})=>{
     const marker=L.marker([lat,lng]).addTo(previewMapInstance);
+    mapBounds.push([lat,lng]);
     const safeName=escapeHTML(s.name||s.type||"Stop");
     const popup=role==="regular"?"<b>Stop "+(i+1)+": "+safeName+"</b><br>"+escapeHTML(s.type||"Stop")+"<br><input id='previewStopName' value='"+safeName.replace(/'/g,"&#39;")+"' placeholder='Stop name'><button onclick='savePreviewStopName("+i+")'>Save Name</button>":"<b>Stop "+(i+1)+": "+safeName+"</b><br>"+escapeHTML(s.type||"Stop");
     marker.bindPopup(popup);
    });
-  }else{previewMapInstance.setView([33.5,-86.8],6);status.textContent="No valid GPS coordinates found for this route's stops."}
-  requestAnimationFrame(()=>{if(previewMapInstance)previewMapInstance.invalidateSize()});
+   if(mapBounds.length>1)previewMapInstance.fitBounds(L.latLngBounds(mapBounds),{padding:[30,30]});
+   else if(mapBounds.length===1)previewMapInstance.setView(mapBounds[0],16);
+   else previewMapInstance.setView([33.5,-86.8],6);
+   requestAnimationFrame(()=>{if(previewMapInstance)previewMapInstance.invalidateSize()});
  }catch(e){document.getElementById("routePreviewStatus").textContent="Map preview failed: "+e.message}
 }
 function savePreviewStopName(index){
